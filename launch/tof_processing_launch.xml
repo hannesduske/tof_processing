@@ -1,12 +1,12 @@
 <launch>
   <!-- Pre-processing package for filtering -->
   <node pkg="tof_processing" type="tof_processing_node.py" name="tof_processing_node">
-    <param name="INPUT_TOPIC" value="/sensors/tof_sensors/pcl_raw" />
+    <param name="INPUT_TOPIC" value="sensors/tof_sensors/pcl_raw" />
 
-    <param name="OUTPUT_TOPIC_PRE_SLICE" value="/sensots/tof_sensors/pcl_pre_process" />
-    <param name="OUTPUT_TOPIC_2D_SLICE" value="/sensots/tof_sensors/pcl_2d_slice" />
-    <param name="OUTPUT_TOPIC_POST_SLICE" value="/sensots/tof_sensors/pcl_post_process" />
-    <param name="OUTPUT_TOPIC_COMBINED" value="/sensots/tof_hybrid/hybrid_scan" />
+    <param name="OUTPUT_TOPIC_PRE_SLICE" value="sensors/tof_sensors/pcl_pre_process" />
+    <param name="OUTPUT_TOPIC_2D_SLICE" value="sensors/tof_sensors/pcl_2d_slice" />
+    <param name="OUTPUT_TOPIC_POST_SLICE" value="sensors/tof_sensors/pcl_post_process" />
+    <param name="OUTPUT_TOPIC_COMBINED" value="sensors/tof_hybrid/hybrid_scan" />
     <param name="PUBLISH_INTERMEDIATE_TOPICS" value="True" />
 
     <param name="FILTER_FLOOR" value="True"/>

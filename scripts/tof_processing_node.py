@@ -5,11 +5,11 @@ import numpy as np
 from sensor_msgs.msg import PointCloud2, PointField, LaserScan
 from std_msgs.msg import Header
 
-DEFAULT_INPUT_TOPIC = "/sensors/tof_sensors/pcl_raw"
-DEFAULT_OUTPUT_TOPIC_PRE_SLICE = "/sensots/tof_sensors/pcl_pre_process"
-DEFAULT_OUTPUT_TOPIC_2D_SLICE = "/sensots/tof_sensors/pcl_2d_slice"
-DEFAULT_OUTPUT_TOPIC_POST_SLICE = "/sensots/tof_sensors/pcl_post_process"
-DEFAULT_OUTPUT_TOPIC_COMBINED = "/sensots/tof_hybrid/hybrid_scan"
+DEFAULT_INPUT_TOPIC = "sensors/tof_sensors/pcl_raw"
+DEFAULT_OUTPUT_TOPIC_PRE_SLICE = "sensors/tof_sensors/pcl_pre_process"
+DEFAULT_OUTPUT_TOPIC_2D_SLICE = "sensors/tof_sensors/pcl_2d_slice"
+DEFAULT_OUTPUT_TOPIC_POST_SLICE = "sensors/tof_sensors/pcl_post_process"
+DEFAULT_OUTPUT_TOPIC_COMBINED = "sensors/tof_hybrid/hybrid_scan"
 DEFAULT_PUBLISH_INTERMEDIATE_TOPICS = False
 DEFAULT_FILTER_FLOOR = True
 DEFAULT_FLOOR_BELOW_BASE_THRESHOLD_M = 0.03
@@ -22,11 +22,11 @@ class ToFPreProcess:
         rospy.loginfo("Starting tof pre-processing node")
 
         self.INPUT_TOPIC = rospy.get_param('~INPUT_TOPIC', DEFAULT_INPUT_TOPIC)
-        self.OUTPUT_TOPIC_PRE_SLICE = rospy.get_param('~INPUT_TOPIC', DEFAULT_OUTPUT_TOPIC_PRE_SLICE)
-        self.OUTPUT_TOPIC_2D_SLICE = rospy.get_param('~INPUT_TOPIC', DEFAULT_OUTPUT_TOPIC_2D_SLICE)
-        self.OUTPUT_TOPIC_POST_SLICE = rospy.get_param('~INPUT_TOPIC', DEFAULT_OUTPUT_TOPIC_POST_SLICE)
-        self.OUTPUT_TOPIC_COMBINED = rospy.get_param('~INPUT_TOPIC', DEFAULT_OUTPUT_TOPIC_COMBINED)
-        self.PUBLISH_INTERMEDIATE_TOPICS = rospy.get_param('~INPUT_TOPIC', DEFAULT_PUBLISH_INTERMEDIATE_TOPICS)
+        self.OUTPUT_TOPIC_PRE_SLICE = rospy.get_param('~OUTPUT_TOPIC_PRE_SLICE', DEFAULT_OUTPUT_TOPIC_PRE_SLICE)
+        self.OUTPUT_TOPIC_2D_SLICE = rospy.get_param('~OUTPUT_TOPIC_2D_SLICE', DEFAULT_OUTPUT_TOPIC_2D_SLICE)
+        self.OUTPUT_TOPIC_POST_SLICE = rospy.get_param('~OUTPUT_TOPIC_POST_SLICE', DEFAULT_OUTPUT_TOPIC_POST_SLICE)
+        self.OUTPUT_TOPIC_COMBINED = rospy.get_param('~OUTPUT_TOPIC_COMBINED', DEFAULT_OUTPUT_TOPIC_COMBINED)
+        self.PUBLISH_INTERMEDIATE_TOPICS = rospy.get_param('~PUBLISH_INTERMEDIATE_TOPICS', DEFAULT_PUBLISH_INTERMEDIATE_TOPICS)
         self.FILTER_FLOOR = rospy.get_param('~FILTER_FLOOR', DEFAULT_FILTER_FLOOR)
         self.FLOOR_BELOW_BASE_THRESHOLD_M = rospy.get_param('~FLOOR_BELOW_BASE_THRESHOLD_M', DEFAULT_FLOOR_BELOW_BASE_THRESHOLD_M)
         self.FILTER_HIGH_SIGMA = rospy.get_param('~FILTER_HIGH_SIGMA', DEFAULT_FILTER_HIGH_SIGMA)
