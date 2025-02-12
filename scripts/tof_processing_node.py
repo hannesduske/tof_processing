@@ -7,9 +7,13 @@ from sensor_msgs.msg import PointCloud2, PointField, LaserScan
 from std_msgs.msg import Header
 
 # Default values for general parameters
-DEFAULT_INPUT_TOPIC = "sensors/tof_sensors/pcl_raw"
+DEFAULT_INPUT_TOPIC_PC2 = "sensors/tof_sensors/pcl_raw"
+DEFAULT_INPUT_TOPIC_LASERSCAN = "/scan"
 DEFAULT_OUTPUT_TOPIC_PRE_SLICE = "sensors/tof_sensors/pcl_pre_process"
 DEFAULT_OUTPUT_TOPIC_2D_SLICE = "sensors/tof_sensors/pcl_2d_slice"
+DEFAULT_OUTPUT_TOPIC_POLAR_SAMPLING = "sensors/tof_sensors/pcl_2d_polar_sampling"
+DEFAULT_OUTPUT_TOPIC_DETECTED_LINES = "/sensors/tof_sensors/pcl_2d_detected_lines"
+DEFAULT_OUTPUT_TOPIC_SAMPLED_LINES = "/sensors/tof_sensors/2d_sampled_lines"
 DEFAULT_OUTPUT_TOPIC_POST_SLICE = "sensors/tof_sensors/pcl_post_process"
 DEFAULT_OUTPUT_TOPIC_COMBINED = "sensors/tof_hybrid/hybrid_scan"
 DEFAULT_PUBLISH_INTERMEDIATE_TOPICS = False
@@ -37,8 +41,6 @@ DEFAULT_DETECT_LINES_MAX_DISTANCE_M = 0.3
 DEFAULT_DETECT_LINES_MIN_POINTS = 4
 
 DEFAULT_SAMPLE_LINES = False
-DEFAULT_SAMPLE_LINES_POLAR = False
-DEFAULT_SAMPLE_LINEAR_INCREMENT_M = 0.1
 DEFAULT_SAMPLE_LINES_POLAR_INCREMENT_DEG = 1.0
 
 DEFAULT_INTERPOLATE_LASER_SCAN = False
@@ -49,15 +51,23 @@ DEAFULT_COMBINE_LINES_AND_INTERPOLATION = False
 
 class ToFPreProcess:
     def __init__(self):
+
+        self.got_first_laserscan = False
+        self.last_laser_msg = LaserScan()
+
         rospy.init_node('tof_pre_process_node', anonymous=True)
         rospy.loginfo("Starting tof pre-processing node")
 
-        self.INPUT_TOPIC = rospy.get_param('~INPUT_TOPIC', DEFAULT_INPUT_TOPIC)
+        self.INPUT_TOPIC_PC2 = rospy.get_param('~INPUT_TOPIC_PC2', DEFAULT_INPUT_TOPIC_PC2)
+        self.INPUT_TOPIC_LASERSCAN = rospy.get_param('~INPUT_TOPIC_LASERSCAN', DEFAULT_INPUT_TOPIC_LASERSCAN)
+        self.PUBLISH_INTERMEDIATE_TOPICS = rospy.get_param('~PUBLISH_INTERMEDIATE_TOPICS', DEFAULT_PUBLISH_INTERMEDIATE_TOPICS)
         self.OUTPUT_TOPIC_PRE_SLICE = rospy.get_param('~OUTPUT_TOPIC_PRE_SLICE', DEFAULT_OUTPUT_TOPIC_PRE_SLICE)
         self.OUTPUT_TOPIC_2D_SLICE = rospy.get_param('~OUTPUT_TOPIC_2D_SLICE', DEFAULT_OUTPUT_TOPIC_2D_SLICE)
+        self.OUTPUT_TOPIC_POLAR_SAMPLING = rospy.get_param('~OUTPUT_TOPIC_POLAR_SAMPLING', DEFAULT_OUTPUT_TOPIC_POLAR_SAMPLING)
+        self.OUTPUT_TOPIC_DETECTED_LINES = rospy.get_param('~OUTPUT_TOPIC_DETECTED_LINES', DEFAULT_OUTPUT_TOPIC_DETECTED_LINES)
+        self.OUTPUT_TOPIC_SAMPLED_LINES = rospy.get_param('~OUTPUT_TOPIC_SAMPLED_LINES', DEFAULT_OUTPUT_TOPIC_SAMPLED_LINES)
         self.OUTPUT_TOPIC_POST_SLICE = rospy.get_param('~OUTPUT_TOPIC_POST_SLICE', DEFAULT_OUTPUT_TOPIC_POST_SLICE)
         self.OUTPUT_TOPIC_COMBINED = rospy.get_param('~OUTPUT_TOPIC_COMBINED', DEFAULT_OUTPUT_TOPIC_COMBINED)
-        self.PUBLISH_INTERMEDIATE_TOPICS = rospy.get_param('~PUBLISH_INTERMEDIATE_TOPICS', DEFAULT_PUBLISH_INTERMEDIATE_TOPICS)
 
         self.FILTER_FLOOR = rospy.get_param('~FILTER_FLOOR', DEFAULT_FILTER_FLOOR)
         self.FLOOR_BELOW_BASE_THRESHOLD_M = rospy.get_param('~FLOOR_BELOW_BASE_THRESHOLD_M', DEFAULT_FLOOR_BELOW_BASE_THRESHOLD_M)
@@ -77,22 +87,24 @@ class ToFPreProcess:
         self.DETECT_LINES_MAX_DISTANCE_M      = rospy.get_param('~DETECT_LINES_MAX_DISTANCE_M', DEFAULT_DETECT_LINES_MAX_DISTANCE_M)
         self.DETECT_LINES_MIN_POINTS          = rospy.get_param('~DETECT_LINES_MIN_POINTS', DEFAULT_DETECT_LINES_MIN_POINTS)
         self.SAMPLE_LINES                     = rospy.get_param('~SAMPLE_LINES', DEFAULT_SAMPLE_LINES)
-        self.SAMPLE_LINES_POLAR               = rospy.get_param('~SAMPLE_LINES_POLAR', DEFAULT_SAMPLE_LINES_POLAR)
-        self.SAMPLE_LINES_LINEAR_INCREMENT_M  = rospy.get_param('~SAMPLE_LINES_LINEAR_INCREMENT_M', DEFAULT_SAMPLE_LINEAR_INCREMENT_M)
         self.SAMPLE_LINES_POLAR_INCREMENT_DEG = rospy.get_param('~SAMPLE_LINES_POLAR_INCREMENT_DEG', DEFAULT_SAMPLE_LINES_POLAR_INCREMENT_DEG)
         self.INTERPOLATE_LASER_SCAN           = rospy.get_param('~INTERPOLATE_LASER_SCAN', DEFAULT_INTERPOLATE_LASER_SCAN)
         self.INTERPOLATE_MAX_DISTANCE_M       = rospy.get_param('~INTERPOLATE_MAX_DISTANCE_M', DEFAULT_INTERPOLATE_MAX_DISTANCE_M)
         self.INTERPOLATE_LASER_ANGLE_DEG      = rospy.get_param('~INTERPOLATE_LASER_ANGLE_DEG', DEFAULT_NTERPOLATE_LASER_ANGLE_DEG)
         self.COMBINE_LINES_AND_INTERPOLATION  = rospy.get_param('~COMBINE_LINES_AND_INTERPOLATION', DEAFULT_COMBINE_LINES_AND_INTERPOLATION)
 
-
         rospy.loginfo("\n\nGeneral parameters:")
-        rospy.loginfo("INPUT_TOPIC: " + str(self.INPUT_TOPIC))
-        rospy.loginfo("OUTPUT_TOPIC_PRE_SLICE: " + str(self.OUTPUT_TOPIC_PRE_SLICE))
-        rospy.loginfo("OUTPUT_TOPIC_2D_SLICE: " + str(self.OUTPUT_TOPIC_2D_SLICE))
-        rospy.loginfo("OUTPUT_TOPIC_POST_SLICE: " + str(self.OUTPUT_TOPIC_POST_SLICE))
-        rospy.loginfo("OUTPUT_TOPIC_COMBINED: " + str(self.OUTPUT_TOPIC_COMBINED))
         rospy.loginfo("PUBLISH_INTERMEDIATE_TOPICS: " + str(self.PUBLISH_INTERMEDIATE_TOPICS))
+        rospy.loginfo("INPUT_TOPIC_PC2: " + str(self.INPUT_TOPIC_PC2))
+        rospy.loginfo("INPUT_TOPIC_LASERSCAN: " + str(self.INPUT_TOPIC_LASERSCAN))
+        if self.PUBLISH_INTERMEDIATE_TOPICS:
+            rospy.loginfo("(intermediate) OUTPUT_TOPIC_PRE_SLICE: " + str(self.OUTPUT_TOPIC_PRE_SLICE))
+            rospy.loginfo("(intermediate) OUTPUT_TOPIC_2D_SLICE: " + str(self.OUTPUT_TOPIC_2D_SLICE))
+            rospy.loginfo("(intermediate) OUTPUT_TOPIC_POLAR_SAMPLING: " + str(self.OUTPUT_TOPIC_POLAR_SAMPLING))
+            rospy.loginfo("(intermediate) OUTPUT_TOPIC_DETECTED_LINES: " + str(self.OUTPUT_TOPIC_DETECTED_LINES))
+            rospy.loginfo("(intermediate) OUTPUT_TOPIC_SAMPLED_LINES: " + str(self.OUTPUT_TOPIC_SAMPLED_LINES))
+            rospy.loginfo("(intermediate) OUTPUT_TOPIC_POST_SLICE: " + str(self.OUTPUT_TOPIC_POST_SLICE))
+        rospy.loginfo("OUTPUT_TOPIC_COMBINED: " + str(self.OUTPUT_TOPIC_COMBINED))
 
         rospy.loginfo("\n\nPre processing parameters:")
         rospy.loginfo("FILTER_FLOOR: " + str(self.FILTER_FLOOR))
@@ -115,8 +127,6 @@ class ToFPreProcess:
         rospy.loginfo("DETECT_LINES_MAX_DISTANCE_M: " + str(self.DETECT_LINES_MAX_DISTANCE_M))
         rospy.loginfo("DETECT_LINES_MIN_POINTS: " + str(self.DETECT_LINES_MIN_POINTS))
         rospy.loginfo("SAMPLE_LINES: " + str(self.SAMPLE_LINES))
-        rospy.loginfo("SAMPLE_LINES_POLAR: " + str(self.SAMPLE_LINES_POLAR))
-        rospy.loginfo("SAMPLE_LINES_LINEAR_INCREMENT_M: " + str(self.SAMPLE_LINES_LINEAR_INCREMENT_M))
         rospy.loginfo("SAMPLE_LINES_POLAR_INCREMENT_DEG: " + str(self.SAMPLE_LINES_POLAR_INCREMENT_DEG))
         rospy.loginfo("INTERPOLATE_LASER_SCAN: " + str(self.INTERPOLATE_LASER_SCAN))
         rospy.loginfo("INTERPOLATE_MAX_DISTANCE_M: " + str(self.INTERPOLATE_MAX_DISTANCE_M))
@@ -125,23 +135,21 @@ class ToFPreProcess:
 
         # Normalize plane normal to unit vector, otherwise functions in receive_pointcloud() have to be changed
         self.PLANE_NORMAL = self.PLANE_NORMAL / np.linalg.norm(self.PLANE_NORMAL)
-
-        self.tof_sub = rospy.Subscriber(self.INPUT_TOPIC, PointCloud2, self.receive_pointcloud)
+        self.tof_sub = rospy.Subscriber(self.INPUT_TOPIC_PC2, PointCloud2, self.receive_pointcloud)
+        self.laser_sub = rospy.Subscriber(self.INPUT_TOPIC_LASERSCAN, LaserScan, self.receive_laserscan)
         
-        self.tof_pre_process_pub = rospy.Publisher(self.OUTPUT_TOPIC_PRE_SLICE, PointCloud2, queue_size=10)
-        
-        self.tof_2d_slice_pub = rospy.Publisher(self.OUTPUT_TOPIC_2D_SLICE, PointCloud2, queue_size=10)
-        
-        self.tof_post_process_pub = rospy.Publisher(self.OUTPUT_TOPIC_POST_SLICE, PointCloud2, queue_size=10)
-        self.tof_post_process_polar_pub = rospy.Publisher("/sensors/tof_sensors/post_process_polar", LaserScan, queue_size= 10)
-        self.tof_line_pub = rospy.Publisher("/sensors/tof_sensors/2d_lines", PointCloud2, queue_size= 10)
-        if self.SAMPLE_LINES_POLAR:
-            self.tof_sampled_lines_polar_pub = rospy.Publisher("/sensors/tof_sensors/2d_sampled_lines_polar", LaserScan, queue_size= 10)
-        else:
-            self.tof_sampled_lines_linear_pub = rospy.Publisher("/sensors/tof_sensors/2d_sampled_lines_linear", PointCloud2, queue_size= 10)
-        self.tof_sampled_lines_pub = rospy.Publisher("/sensors/tof_sensors/lines_sampled", PointCloud2, queue_size= 10)
-
+        if self.PUBLISH_INTERMEDIATE_TOPICS:
+            self.tof_pre_process_pub = rospy.Publisher(self.OUTPUT_TOPIC_PRE_SLICE, PointCloud2, queue_size=10)
+            self.tof_2d_slice_pub = rospy.Publisher(self.OUTPUT_TOPIC_2D_SLICE, PointCloud2, queue_size=10)
+            self.tof_post_process_pub = rospy.Publisher(self.OUTPUT_TOPIC_POST_SLICE, PointCloud2, queue_size=10)
+            self.tof_line_pub = rospy.Publisher(self.OUTPUT_TOPIC_DETECTED_LINES, PointCloud2, queue_size= 10)
+            self.tof_post_process_polar_pub = rospy.Publisher(self.OUTPUT_TOPIC_POLAR_SAMPLING, LaserScan, queue_size= 10)
+            self.tof_sampled_lines_polar_pub = rospy.Publisher(self.OUTPUT_TOPIC_SAMPLED_LINES, LaserScan, queue_size= 10)
         self.tof_combined_pub = rospy.Publisher(self.OUTPUT_TOPIC_COMBINED, LaserScan, queue_size=10)
+
+    def receive_laserscan(self, msg):
+        self.got_first_laserscan = True
+        self.last_laser_msg = msg
 
     def receive_pointcloud(self, msg):
         # Restore shape of flattened array
@@ -430,80 +438,59 @@ class ToFPreProcess:
 
                 # Sampling the lines
                 if self.DETECT_LINES and self.SAMPLE_LINES:
-                    if self.SAMPLE_LINES_POLAR:
-                        angle_increment = self.INTERPOLATE_LASER_ANGLE_DEG if (self.COMBINE_LINES_AND_INTERPOLATION) else self.SAMPLE_LINES_POLAR_INCREMENT_DEG
-                        polar_angles = np.rad2deg(np.arctan2(point_cloud_lines[:, 1], point_cloud_lines[:, 0]))
-                        point_count_polar = int(np.round(360/angle_increment))
-                        ranges = interpolated_distances if (self.COMBINE_LINES_AND_INTERPOLATION) else np.zeros(point_count_polar, dtype=np.float32)
-                        intensities = np.zeros(point_count_polar, dtype=np.float32)
 
-                        for i in range(line_count):
-                            current_line_idx = point_cloud_lines[:,3] == i
-                            
-                            if(np.any(current_line_idx)):
-                                current_line_angles = polar_angles[current_line_idx]
-                                current_line_points = point_cloud_lines[current_line_idx]
+                    angle_increment = self.INTERPOLATE_LASER_ANGLE_DEG if (self.COMBINE_LINES_AND_INTERPOLATION) else self.SAMPLE_LINES_POLAR_INCREMENT_DEG
+                    polar_angles = np.rad2deg(np.arctan2(point_cloud_lines[:, 1], point_cloud_lines[:, 0]))
+                    point_count_polar = int(np.round(360/angle_increment))
+                    ranges = interpolated_distances if (self.COMBINE_LINES_AND_INTERPOLATION) else np.zeros(point_count_polar, dtype=np.float32)
+                    intensities = np.zeros(point_count_polar, dtype=np.float32)
 
-                                first_point = current_line_points[0, 0:3]
-                                last_point = current_line_points[-1, 0:3]
-                                line_vector = (last_point - first_point) / np.linalg.norm(last_point - first_point)
+                    for i in range(line_count):
+                        current_line_idx = point_cloud_lines[:,3] == i
+                        
+                        if(np.any(current_line_idx)):
+                            current_line_angles = polar_angles[current_line_idx]
+                            current_line_points = point_cloud_lines[current_line_idx]
 
-                                #increase first line-point angle to next higher discrete value
-                                first_angle = min([current_line_angles[0], current_line_angles[-1]])
-                                first_angle_idx = int(np.round(first_angle / angle_increment))
-
-                                #decrease last line-point angle to next lower discrete value
-                                last_angle = max([current_line_angles[0], current_line_angles[-1]])
-                                last_angle_idx = int(np.round(last_angle // angle_increment))
-
-                                point_count = last_angle_idx - first_angle_idx
-                                for j in range(point_count):
-                                    angle = (first_angle_idx + j) * angle_increment
-                                    angle_idx = int(first_angle_idx + j)
-
-                                    # Calculate new points with discrete angles on the detected lines
-                                    # d * cos(angle) = p_x + t * line_vector_x
-                                    # d * sin(angle) = p_y + t * line_vector_y
-                                    # -> solve for d
-                                    nom = first_point[0] * line_vector[1] - first_point[1] * line_vector[0]
-                                    denom = np.cos(np.deg2rad(angle)) * line_vector[1] - np.sin(np.deg2rad(angle)) * line_vector[0]
-                                    distance = nom / denom
-
-                                    ranges[angle_idx] = distance
-                                    intensities[angle_idx] = i + 1
-
-                        sampled_line_msg = self.prepare_LaserScan_msg(ranges, intensities, angle_increment, 0.05, 5.0, msg.header)
-                        self.tof_sampled_lines_polar_pub.publish(sampled_line_msg)
-
-                    else:
-                        sampled_lines = np.empty((0,4), dtype=np.float32)
-                    
-                        for i in range(line_count):
-                            current_line_points = point_cloud_lines[point_cloud_lines[:,3] == i]
                             first_point = current_line_points[0, 0:3]
                             last_point = current_line_points[-1, 0:3]
+                            line_vector = (last_point - first_point) / np.linalg.norm(last_point - first_point)
 
-                            line_vector = last_point - first_point
-                            line_length = np.linalg.norm(line_vector)
-                            step_count  = math.ceil(line_length / self.SAMPLE_LINES_LINEAR_INCREMENT_M)
+                            #increase first line-point angle to next higher discrete value
+                            first_angle = min([current_line_angles[0], current_line_angles[-1]])
+                            first_angle_idx = int(np.round(first_angle / angle_increment))
 
-                            sampled_line_points = np.zeros((step_count, 4), dtype=np.float32)
-                            for j in range(step_count):
-                                sampled_line_points[j, 0:3] = first_point + line_vector * (j / step_count)
-                                sampled_line_points[j, 3] = i
+                            #decrease last line-point angle to next lower discrete value
+                            last_angle = max([current_line_angles[0], current_line_angles[-1]])
+                            last_angle_idx = int(np.round(last_angle // angle_increment))
 
-                            sampled_lines = np.append(sampled_lines, sampled_line_points, axis=0)
+                            point_count = last_angle_idx - first_angle_idx
+                            for j in range(point_count):
+                                angle = (first_angle_idx + j) * angle_increment
+                                angle_idx = int(first_angle_idx + j)
 
-                        sampled_line_msg = self.prepare_PointCloud2_msg(sampled_lines, msg.header, "line_no")
-                        self.tof_sampled_lines_linear_pub.publish(sampled_line_msg)
+                                # Calculate new points with discrete angles on the detected lines
+                                # d * cos(angle) = p_x + t * line_vector_x
+                                # d * sin(angle) = p_y + t * line_vector_y
+                                # -> solve for d
+                                nom = first_point[0] * line_vector[1] - first_point[1] * line_vector[0]
+                                denom = np.cos(np.deg2rad(angle)) * line_vector[1] - np.sin(np.deg2rad(angle)) * line_vector[0]
+                                distance = nom / denom
 
+                                ranges[angle_idx] = distance
+                                intensities[angle_idx] = i + 1
+
+                    sampled_line_msg = self.prepare_LaserScan_msg(ranges, intensities, angle_increment, 0.05, 5.0, msg.header)
+                    self.tof_sampled_lines_polar_pub.publish(sampled_line_msg)
 
             if point_count > 0:
                 post_msg = self.prepare_PointCloud2_msg(point_cloud_2d, msg.header, "sigma")
                 self.tof_post_process_pub.publish(post_msg)
 
-        scan_msg_filter = self.prepare_PointCloud2_msg(filtered_points, msg.header, "sigma")
-        self.tof_post_process_pub.publish(scan_msg_filter)
+
+            if(self.got_first_laserscan):
+                self.tof_combined_pub.publish(self.last_laser_msg)
+
 
 
     def prepare_PointCloud2_msg(self, point_data, header, last_dim_name):
