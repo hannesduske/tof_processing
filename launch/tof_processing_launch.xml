@@ -1,44 +1,14 @@
 <launch>
   <!-- Pre-processing package for filtering -->
-  <node pkg="tof_processing" type="tof_processing_node.py" name="tof_processing_node">
-    <param name="INPUT_TOPIC" value="sensors/tof_sensors/pcl_raw" />
 
-    <param name="OUTPUT_TOPIC_PRE_SLICE" value="sensors/tof_sensors/pcl_pre_process" />
-    <param name="OUTPUT_TOPIC_2D_SLICE" value="sensors/tof_sensors/pcl_2d_slice" />
-    <param name="OUTPUT_TOPIC_POST_SLICE" value="sensors/tof_sensors/pcl_post_process" />
-    <param name="OUTPUT_TOPIC_COMBINED" value="sensors/tof_hybrid/hybrid_scan" />
-    <param name="PUBLISH_INTERMEDIATE_TOPICS" value="True" />
+    <node
+      pkg="tof_processing"
+      type="tof_processing_node.py"
+      name="tof_processing_node"
+      output="screen">
 
-    <param name="FILTER_FLOOR" value="True"/>
-    <param name="FLOOR_BELOW_BASE_THRESHOLD_M" value="0.03"/>
-    <param name="FILTER_HIGH_SIGMA" value="False"/>
-    <param name="HIGH_SIGMA_THRESHOLD" value="0.006"/>
-  </node>
+      <rosparam file="$(find tof_processing)/params/tof_processing_params.yaml"/>
 
-  <!-- Package for creating a 2D slice from 3D pointcloud -->
-  <!-- <node pkg="tof_processing" exec="tof_2d_slice_node" name="tof_2d_slice_node">
-    <param name="PROJECT_ON_PLANE" value="True"/>
-    <param name="DISTANCE_THRESHOLD" value="0.15"/>
-    <param name="PLANE_POINT" value="[0.0,0.0,0.15]"/>
-    <param name="PLANE_NORMAL" value="[0.0,0.0,1.0]"/>
-  </node> -->
+    </node>
 
-  <!-- Post-processing package for 2D slice -->
-  <!-- <node pkg="tof_processing" exec="tof_post_process_node" name="tof_post_process_node">
-    <param name="REDUCTION_FILTER" value="True"/>
-    <param name="REDUCTION_FILTER_TRESHOLD_M" value="0.15"/>
-    <param name="DETECT_LINES" value="True"/>
-    <param name="DETECT_LINES_REGRESSION" value="False"/>
-    <param name="DETECT_LINES_EPSILON" value="0.02"/>
-    <param name="DETECT_LINES_MAX_DISTANCE" value="0.3"/>
-    <param name="DETECT_LINES_MIN_POINTS" value = "4"/>
-    <param name="SAMPLE_LINES" value = "True"/>
-    <param name="SAMPLE_LINES_POLAR" value = "True"/>
-    <param name="SAMPLE_LINES_LINEAR_INCREMENT_M" value = "0.05"/>
-    <param name="SAMPLE_LINES_POLAR_INCREMENT_DEG" value = "2.0"/>
-    <param name="INTERPOLATE_LASER_SCAN" value = "True"/>
-    <param name="INTERPOLATE_MAX_DISTANCE_M" value = "0.20"/>
-    <param name="INTERPOLATE_LASER_ANGLE_DEG" value = "1.0"/>
-    <param name="COMBINE_LINES_AND_INTERPOLATION" value ="True"/>
-  </node> -->
 </launch>

@@ -189,6 +189,7 @@ include_directories(
 ## Mark other files for installation (e.g. launch and bag files, etc.)
 install(FILES
   launch/tof_processing_launch.xml
+  params/tof_processing_params.yaml
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
 
