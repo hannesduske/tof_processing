@@ -51,9 +51,11 @@ class ToFPreProcess:
 
         self.laser_offset_deg = 0.0
         self.laser_incremenet_deg = 0.0
+        self.lidar_point_count = 0
+        self.tof_point_count = 0
         self.got_first_laserscan = False
         self.got_first_tof_scan = False
-        self.last_tof_scan = PointCloud2()
+        self.last_tof_scan = LaserScan()
 
         rospy.init_node('tof_pre_process_node', anonymous=True)
         rospy.loginfo("Starting tof pre-processing node")
@@ -155,28 +157,55 @@ class ToFPreProcess:
         if(not self.got_first_laserscan):
             
             if(not self.BYPASS_MERGING):
-                self.laser_offset_deg = math.fmod(msg.angle_min, msg.angle_increment) * 180 / math.pi
-                self.laser_incremenet_deg = msg.angle_increment * 180 / math.pi
-                #rospy.loginfo("self.laser_offset_deg: " + str(self.laser_offset_deg))
-                #rospy.loginfo("self.laser_increment: " + str(self.laser_incremenet_deg))
+                self.laser_offset_deg       = msg.angle_min * 180 / math.pi #math.fmod(msg.angle_min, msg.angle_increment) * 180 / math.pi
+                self.laser_incremenet_deg   = msg.angle_increment * 180 / math.pi
+                self.lidar_point_count      = int(math.floor(abs((msg.angle_max - msg.angle_min) / msg.angle_increment)))
+                self.tof_point_count        = int(math.floor(360/self.laser_incremenet_deg))
+                
+                rospy.loginfo("self.laser_msg_min_angle: "    + str(msg.angle_min * 180 / math.pi))
+                rospy.loginfo("self.laser_msg_max_angle: "    + str(msg.angle_max * 180 / math.pi))
+                rospy.loginfo("self.laser_msg_increment: "    + str(msg.angle_increment * 180 / math.pi))
+                rospy.loginfo("self.laser_msg_count: "        + str((msg.angle_min - msg.angle_max) / msg.angle_increment))
+                rospy.loginfo("")
+                rospy.loginfo("self.laser_offset_deg: "       + str(self.laser_offset_deg))
+                rospy.loginfo("self.laser_increment: "        + str(self.laser_incremenet_deg))
+                rospy.loginfo("self.lidar_point_count: "      + str(self.lidar_point_count))
 
             self.got_first_laserscan = True
             rospy.loginfo("\n\nGot first LaserScan. Starting to merge the scans now.")
 
-        if(not self.BYPASS_MERGING and self.got_first_tof_scan):
+        if(not self.BYPASS_MERGING):
             time_difference_ms = abs((msg.header.stamp.to_sec() - self.last_tof_scan.header.stamp.to_sec())) * 1000
-            #rospy.loginfo("MAX_MERGE_TIME_DIFFERENCE_MS:" + str(self.MAX_MERGE_TIME_DIFFERENCE_MS) + " ms, actual difference: " + str(time_difference_ms) + " ms")
             
-            if(time_difference_ms > self.MAX_MERGE_TIME_DIFFERENCE_MS):
+            # The merged scan always covers 360°, even if the original Lidar only has a limited opening angle
+            distances = np.zeros(self.tof_point_count, dtype=np.float32)
+            intensities = np.zeros(self.tof_point_count, dtype=np.float32)
+            
+            if(self.got_first_tof_scan and (time_difference_ms <= self.MAX_MERGE_TIME_DIFFERENCE_MS)):
+                distances = np.array(self.last_tof_scan.ranges, dtype=np.float32)
+
+            for i in range(self.lidar_point_count):
+                if(msg.ranges[i] < msg.range_max and msg.ranges[i] > msg.range_min):
+                    distances[i] = msg.ranges[i]
+                    intensities[i] = msg.intensities[i]
+
+            if(not self.got_first_tof_scan):
+                rospy.logwarn("Waiting for first ToF measurement. Just echoing Lidar LaserScan.")
+                # Unable to merge scans, just echo the Lidar scan
+                self.tof_combined_pub.publish(msg)
+            
+            elif(time_difference_ms > self.MAX_MERGE_TIME_DIFFERENCE_MS):
                 rospy.logwarn("Time difference between latest Lidar and ToF message is larger than MAX_MERGE_TIME_DIFFERENCE_MS.")
                 rospy.logwarn("MAX_MERGE_TIME_DIFFERENCE_MS:" + str(self.MAX_MERGE_TIME_DIFFERENCE_MS) + " ms, actual difference: " + str(time_difference_ms) + " ms")
                 
                 # Unable to merge scans, just echo the Lidar scan
                 self.tof_combined_pub.publish(msg)
+                
             else:
-
                 # Publish merged scan
-                self.tof_combined_pub.publish(msg)
+                merge_msg = self.prepare_LaserScan_msg(distances, intensities, self.laser_offset_deg, 360 + self.laser_offset_deg, self.laser_incremenet_deg, msg.range_min, msg.range_max, msg.header)
+                self.tof_combined_pub.publish(merge_msg)
+
         else:
             self.tof_combined_pub.publish(msg)
 
@@ -284,14 +313,15 @@ class ToFPreProcess:
                 polar_angles = np.rad2deg(np.arctan2(point_cloud_2d[:, 1], point_cloud_2d[:, 0]))
                 #self.get_logger().info(str(polar_angles))
 
-                point_count_polar = int(np.round(360/self.laser_incremenet_deg))
-                interpolated_distances = np.zeros(point_count_polar, dtype=np.float32)
-                intensities = np.zeros(point_count_polar, dtype=np.float32)
+                interpolated_distances = np.zeros(self.tof_point_count, dtype=np.float32)
+                intensities = np.zeros(self.tof_point_count, dtype=np.float32)
 
-                for i in range(point_count_polar):
+                for i in range(self.tof_point_count):
                     angle = (i * self.laser_incremenet_deg) + self.laser_offset_deg
                     while angle > 180:
                         angle -= 360
+                    while angle < -180:
+                        angle += 360
 
                     current_ray_vector = np.array([np.cos(np.deg2rad(angle)), np.sin(np.deg2rad(angle))])
 
@@ -479,12 +509,10 @@ class ToFPreProcess:
 
                 # Sampling the lines
                 if self.DETECT_LINES and self.got_first_laserscan:
-
-                    angle_increment = self.laser_incremenet_deg
+                    
                     polar_angles = np.rad2deg(np.arctan2(point_cloud_lines[:, 1], point_cloud_lines[:, 0]))
-                    point_count_polar = int(np.round(360/angle_increment))
                     ranges = interpolated_distances
-                    intensities = np.zeros(point_count_polar, dtype=np.float32)
+                    intensities = np.zeros(self.tof_point_count, dtype=np.float32)
 
                     for i in range(line_count):
                         current_line_idx = point_cloud_lines[:,3] == i
@@ -499,16 +527,16 @@ class ToFPreProcess:
 
                             #increase first line-point angle to next higher discrete value
                             first_angle = min([current_line_angles[0], current_line_angles[-1]])
-                            first_angle_idx = int(np.round(first_angle / angle_increment))
+                            first_angle_idx = int(np.round(first_angle / self.laser_incremenet_deg))
 
                             #decrease last line-point angle to next lower discrete value
                             last_angle = max([current_line_angles[0], current_line_angles[-1]])
-                            last_angle_idx = int(np.round(last_angle // angle_increment))
+                            last_angle_idx = int(np.round(last_angle // self.laser_incremenet_deg))
 
                             point_count = last_angle_idx - first_angle_idx
                             for j in range(point_count):
-                                angle = (first_angle_idx + j) * angle_increment
-                                angle_idx = int(first_angle_idx + j)
+                                angle = (first_angle_idx + j) * self.laser_incremenet_deg
+                                angle_idx = (int(first_angle_idx + j) - round(self.laser_offset_deg / self.laser_incremenet_deg)) % self.tof_point_count
 
                                 # Calculate new points with discrete angles on the detected lines
                                 # d * cos(angle) = p_x + t * line_vector_x
@@ -521,12 +549,12 @@ class ToFPreProcess:
                                 ranges[angle_idx] = distance
                                 intensities[angle_idx] = i + 1
 
-                    sampled_line_msg = self.prepare_LaserScan_msg(ranges, intensities, self.laser_offset_deg, 360 + self.laser_offset_deg, angle_increment, 0.05, 5.0, msg.header)
+                    sampled_line_msg = self.prepare_LaserScan_msg(ranges, intensities, self.laser_offset_deg, 360 + self.laser_offset_deg, self.laser_incremenet_deg, 0.05, 5.0, msg.header)
                     self.last_tof_scan = sampled_line_msg
                     self.got_first_tof_scan = True
                     point_count = ranges.size
 
-            if(point_count > 0):
+            if(point_count > 0 and self.got_first_tof_scan):
                 self.tof_post_process_pub.publish(self.last_tof_scan)
 
 
