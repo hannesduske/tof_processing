@@ -1,15 +1,18 @@
 #tof_processing_params.yaml
+
+BYPASS_MERGING: False
+PUBLISH_INTERMEDIATE_TOPICS: True
+MAX_MERGE_TIME_DIFFERENCE_MS: 100
+
 INPUT_TOPIC_PC2: "sensors/tof_sensors/pcl_raw"
 INPUT_TOPIC_LASERSCAN: "/scan"
-
-OUTPUT_TOPIC_PRE_SLICE: "sensors/tof_sensors/pcl_pre_process" 
-OUTPUT_TOPIC_2D_SLICE: "sensors/tof_sensors/pcl_2d_slice" 
-OUTPUT_TOPIC_POLAR_SAMPLING : "sensors/tof_sensors/pcl_2d_polar_sampling"
-OUTPUT_TOPIC_DETECTED_LINES : "/sensors/tof_sensors/pcl_2d_detected_lines"
-OUTPUT_TOPIC_SAMPLED_LINES : "/sensors/tof_sensors/2d_sampled_lines"
-OUTPUT_TOPIC_POST_SLICE: "sensors/tof_sensors/pcl_post_process" 
-OUTPUT_TOPIC_COMBINED: "sensors/tof_hybrid/hybrid_scan" 
-PUBLISH_INTERMEDIATE_TOPICS: True
+OUTPUT_TOPIC_PRE_SLICE: "sensors/tof_sensors/pcl_pre_process"
+OUTPUT_TOPIC_2D_SLICE: "sensors/tof_sensors/pcl_2d_slice"
+OUTPUT_TOPIC_2D_REDUCTION: "sensors/tof_sensors/pcl_2d_reduction"
+OUTPUT_TOPIC_2D_INTERPOLATION: "sensors/tof_sensors/pcl_2d_polar_sampling"
+OUTPUT_TOPIC_DETECTED_LINES: "sensors/tof_sensors/pcl_2d_detected_lines"
+OUTPUT_TOPIC_POST_SLICE: "sensors/tof_sensors/pcl_post_process"
+OUTPUT_TOPIC_COMBINED: "sensors/tof_hybrid/hybrid_scan"
 
 FILTER_FLOOR: True
 FLOOR_BELOW_BASE_THRESHOLD_M: 0.03
