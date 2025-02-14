@@ -6,6 +6,7 @@ MAX_MERGE_TIME_DIFFERENCE_MS: 150
 PUBLISH_INTERMEDIATE_TOPICS: True
 INPUT_TOPIC_PC2: "sensors/tof_sensors/pcl_raw"
 INPUT_TOPIC_LASERSCAN: "/scan"
+
 OUTPUT_TOPIC_PRE_SLICE: "sensors/tof_sensors/pcl_pre_process"
 OUTPUT_TOPIC_2D_SLICE: "sensors/tof_sensors/pcl_2d_slice"
 OUTPUT_TOPIC_2D_REDUCTION: "sensors/tof_sensors/pcl_2d_reduction"
@@ -13,6 +14,10 @@ OUTPUT_TOPIC_2D_INTERPOLATION: "sensors/tof_sensors/pcl_2d_polar_sampling"
 OUTPUT_TOPIC_DETECTED_LINES: "sensors/tof_sensors/pcl_2d_detected_lines"
 OUTPUT_TOPIC_POST_SLICE: "sensors/tof_sensors/pcl_post_process"
 OUTPUT_TOPIC_COMBINED: "sensors/tof_hybrid/hybrid_scan"
+
+INPUT_FRAME_PC2: "base_sensorring"
+INPUT_FRAME_LASERSCAN: "base_laser"
+OUTPUT_FRAME_COMBINED: "base_tof_hybrid"
 
 FILTER_FLOOR: True
 FLOOR_BELOW_BASE_THRESHOLD_M: 0.03
@@ -23,10 +28,10 @@ PROJECT_ON_PLANE: True                # Project points on the 2D slice plane. On
 DISTANCE_THRESHOLD_M: 0.15            # Distance threshold to eliminate points that are too far from the 2D slice plane
 INTERPOLATE_MAX_DISTANCE_M: 0.20      # Max distance between two ToF points to count them as direct neighbours
 
-LASER_FRAME_Z_OFFSET: -0.1            # When BYPASS_MERGING = False: Z-Offset of the 2D slice specified in the INPUT_TOPIC_LASERSCAN ksys
-BYPASS_LASER_ANGLE_DEG: 1.0           # When BYPASS_MERGING = True: Angle increment for interpolating the LaserScan
-BYPASS_PLANE_POINT: [0.0, 0.0, 0.15]  # When BYPASS_MERGING = True: Point of the 2D slice plane
-BYPASS_PLANE_NORMAL: [0.0, 0.0, 1.0]  # When BYPASS_MERGING = True: Normal vector of the 2D slice plane
+LASER_FRAME_Z_OFFSET: -0.05                   # When BYPASS_MERGING = False: Z-Offset of the 2D slice specified in the INPUT_TOPIC_LASERSCAN ksys
+BYPASS_LASER_ANGLE_DEG: 1.0                   # When BYPASS_MERGING = True: Angle increment for interpolating the LaserScan
+BYPASS_PLANE_TRANSLATION_M: [0.0, 0.0, 0.15]  # When BYPASS_MERGING = True: Translation of the 2D slice plane relative to the INPUT_TOPIC_PC2 frame
+BYPASS_PLANE_ROTATION_DEG: [0.0, 0.0, 0.0]    # When BYPASS_MERGING = True: Orientation of the slice plane relative to the INPUT_TOPIC_PC2 frame
 
 REDUCTION_FILTER: True
 REDUCTION_FILTER_TRESHOLD_M: 0.10

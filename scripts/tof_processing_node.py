@@ -5,6 +5,12 @@ import math
 import numpy as np
 from sensor_msgs.msg import PointCloud2, PointField, LaserScan
 from std_msgs.msg import Header
+from geometry_msgs.msg import Transform, TransformStamped
+
+from tf2_msgs.msg import TFMessage
+from tf2_ros import TransformListener, Buffer
+from tf.transformations import quaternion_from_euler, quaternion_about_axis
+import tf_conversions
 
 # Default values for general parameters
 DEFAULT_BYPASS_MERGING = False
@@ -13,6 +19,7 @@ DEFAULT_MAX_MERGE_TIME_DIFFERENCE_MS = 100
 
 DEFAULT_INPUT_TOPIC_PC2 = "sensors/tof_sensors/pcl_raw"
 DEFAULT_INPUT_TOPIC_LASERSCAN = "/scan"
+
 DEFAULT_OUTPUT_TOPIC_PRE_SLICE = "sensors/tof_sensors/pcl_pre_process"
 DEFAULT_OUTPUT_TOPIC_2D_SLICE = "sensors/tof_sensors/pcl_2d_slice"
 DEFAULT_OUTPUT_TOPIC_2D_REDUCTION = "sensors/tof_sensors/pcl_2d_reduction"
@@ -20,6 +27,10 @@ DEFAULT_OUTPUT_TOPIC_2D_INTERPOLATION = "sensors/tof_sensors/pcl_2d_polar_sampli
 DEFAULT_OUTPUT_TOPIC_DETECTED_LINES = "sensors/tof_sensors/pcl_2d_detected_lines"
 DEFAULT_OUTPUT_TOPIC_POST_SLICE = "sensors/tof_sensors/pcl_post_process"
 DEFAULT_OUTPUT_TOPIC_COMBINED = "sensors/tof_hybrid/hybrid_scan"
+
+DEFAULT_INPUT_FRAME_PC2 = "base_sensorring"
+DEFAULT_INPUT_FRAME_LASERSCAN = "base_laser"
+DEFAULT_OUTPUT_FRAME_COMBINED = "base_tof_hybrid"
 
 # Default values for pre processing
 DEFAULT_FILTER_FLOOR = True
@@ -34,8 +45,8 @@ DEFAULT_INTERPOLATE_MAX_DISTANCE_M = 0.05
 
 DEFAULT_LASER_FRAME_Z_OFFSET = 0.0
 DEFAULT_BYPASS_LASER_ANGLE_DEG = 1.0
-DEFAULT_BYPASS_PLANE_POINT = [0.0,0.0,0.10] # 10cm above base_link
-DEFAULT_BYPASS_PLANE_NORMAL = [0.0,0.0,1.0] # x-y-Plane
+DEFAULT_BYPASS_PLANE_TRANSLATION_M = [0.0,0.0,0.10] # 10cm above base_link
+DEFAULT_BYPASS_PLANE_ROTATION_DEG = [0.0,0.0,0.0] # x-y-Plane
 
 # Default values for post processing
 DEFAULT_REDUCTION_FILTER = True
@@ -53,14 +64,6 @@ DEFAULT_DETECT_LINES_MIN_POINTS = 4
 class ToFPreProcess:
     def __init__(self):
 
-        self.laser_offset_deg = 0.0
-        self.laser_incremenet_deg = 0.0
-        self.lidar_point_count = 0
-        self.tof_point_count = 0
-        self.got_first_laserscan = False
-        self.got_first_tof_scan = False
-        self.last_tof_scan = LaserScan()
-
         rospy.init_node('tof_pre_process_node', anonymous=True)
         rospy.loginfo("Starting tof pre-processing node")
 
@@ -70,6 +73,7 @@ class ToFPreProcess:
 
         self.INPUT_TOPIC_PC2                = rospy.get_param('~INPUT_TOPIC_PC2', DEFAULT_INPUT_TOPIC_PC2)
         self.INPUT_TOPIC_LASERSCAN          = rospy.get_param('~INPUT_TOPIC_LASERSCAN', DEFAULT_INPUT_TOPIC_LASERSCAN)
+
         self.OUTPUT_TOPIC_PRE_SLICE         = rospy.get_param('~OUTPUT_TOPIC_PRE_SLICE', DEFAULT_OUTPUT_TOPIC_PRE_SLICE)
         self.OUTPUT_TOPIC_2D_SLICE          = rospy.get_param('~OUTPUT_TOPIC_2D_SLICE', DEFAULT_OUTPUT_TOPIC_2D_SLICE)
         self.OUTPUT_TOPIC_2D_REDUCTION      = rospy.get_param('~OUTPUT_TOPIC_2D_REDUCTION', DEFAULT_OUTPUT_TOPIC_2D_REDUCTION)
@@ -77,6 +81,10 @@ class ToFPreProcess:
         self.OUTPUT_TOPIC_DETECTED_LINES    = rospy.get_param('~OUTPUT_TOPIC_DETECTED_LINES', DEFAULT_OUTPUT_TOPIC_DETECTED_LINES)
         self.OUTPUT_TOPIC_POST_SLICE        = rospy.get_param('~OUTPUT_TOPIC_POST_SLICE', DEFAULT_OUTPUT_TOPIC_POST_SLICE)
         self.OUTPUT_TOPIC_COMBINED          = rospy.get_param('~OUTPUT_TOPIC_COMBINED', DEFAULT_OUTPUT_TOPIC_COMBINED)
+
+        self.INPUT_FRAME_PC2                = rospy.get_param('~INPUT_FRAME_PC2', DEFAULT_INPUT_FRAME_PC2)
+        self.INPUT_FRAME_LASERSCAN          = rospy.get_param('~INPUT_FRAME_LASERSCAN', DEFAULT_INPUT_FRAME_LASERSCAN)
+        self.OUTPUT_FRAME_COMBINED          = rospy.get_param('~OUTPUT_FRAME_COMBINED', DEFAULT_OUTPUT_FRAME_COMBINED)
         
         self.FILTER_FLOOR                   = rospy.get_param('~FILTER_FLOOR', DEFAULT_FILTER_FLOOR)
         self.FLOOR_BELOW_BASE_THRESHOLD_M   = rospy.get_param('~FLOOR_BELOW_BASE_THRESHOLD_M', DEFAULT_FLOOR_BELOW_BASE_THRESHOLD_M)
@@ -89,8 +97,8 @@ class ToFPreProcess:
 
         self.LASER_FRAME_Z_OFFSET           = rospy.get_param('~LASER_FRAME_Z_OFFSET', DEFAULT_LASER_FRAME_Z_OFFSET)
         self.LASER_ANGLE_DEG                = rospy.get_param('~LASER_ANGLE_DEG', DEFAULT_BYPASS_LASER_ANGLE_DEG)
-        self.PLANE_POINT                    = np.array(rospy.get_param('~BYPASS_PLANE_POINT', DEFAULT_BYPASS_PLANE_POINT), dtype=float)
-        self.PLANE_NORMAL                   = np.array(rospy.get_param('~BYPASS_PLANE_NORMAL', DEFAULT_BYPASS_PLANE_NORMAL), dtype=float)
+        self.PLANE_TRANSLATION_M            = np.array(rospy.get_param('~BYPASS_PLANE_TRANSLATION_M', DEFAULT_BYPASS_PLANE_TRANSLATION_M), dtype=float)
+        self.PLANE_ROTATION_DEG             = np.array(rospy.get_param('~BYPASS_PLANE_ROTATION_DEG', DEFAULT_BYPASS_PLANE_ROTATION_DEG), dtype=float)
 
         self.REDUCTION_FILTER               = rospy.get_param('~REDUCTION_FILTER', DEFAULT_REDUCTION_FILTER)
         self.REDUCTION_FILTER_TRESHOLD_M    = rospy.get_param('~REDUCTION_FILTER_TRESHOLD_M', DEFAULT_REDUCTION_FILTER_TRESHOLD_M)
@@ -110,6 +118,7 @@ class ToFPreProcess:
         rospy.loginfo("PUBLISH_INTERMEDIATE_TOPICS: " + str(self.PUBLISH_INTERMEDIATE_TOPICS))
         rospy.loginfo("INPUT_TOPIC_PC2: " + str(self.INPUT_TOPIC_PC2))
         rospy.loginfo("INPUT_TOPIC_LASERSCAN: " + str(self.INPUT_TOPIC_LASERSCAN))
+
         if self.PUBLISH_INTERMEDIATE_TOPICS:
             rospy.loginfo("(intermediate) OUTPUT_TOPIC_PRE_SLICE: " + str(self.OUTPUT_TOPIC_PRE_SLICE))
             rospy.loginfo("(intermediate) OUTPUT_TOPIC_2D_SLICE: " + str(self.OUTPUT_TOPIC_2D_SLICE))
@@ -118,6 +127,11 @@ class ToFPreProcess:
             rospy.loginfo("(intermediate) OUTPUT_TOPIC_DETECTED_LINES: " + str(self.OUTPUT_TOPIC_DETECTED_LINES))
         rospy.loginfo("(intermediate) OUTPUT_TOPIC_POST_SLICE: " + str(self.OUTPUT_TOPIC_POST_SLICE))
         rospy.loginfo("OUTPUT_TOPIC_COMBINED: " + str(self.OUTPUT_TOPIC_COMBINED))
+
+        rospy.loginfo("\n\nCoordinate frames:")
+        rospy.loginfo("INPUT_FRAME_PC2: " + str(self.INPUT_FRAME_PC2))
+        rospy.loginfo("INPUT_FRAME_LASERSCAN: " + str(self.INPUT_FRAME_LASERSCAN))
+        rospy.loginfo("OUTPUT_FRAME_COMBINED: " + str(self.OUTPUT_FRAME_COMBINED))
 
         rospy.loginfo("\n\nPre processing parameters:")
         rospy.loginfo("FILTER_FLOOR: " + str(self.FILTER_FLOOR))
@@ -132,8 +146,8 @@ class ToFPreProcess:
 
         rospy.loginfo("LASER_FRAME_Z_OFFSET: " + str(self.LASER_FRAME_Z_OFFSET))
         rospy.loginfo("BYPASS_LASER_ANGLE_DEG: " + str(self.LASER_ANGLE_DEG))
-        rospy.loginfo("BYPASS_PLANE_POINT: " + str(self.PLANE_POINT))
-        rospy.loginfo("BYPASS_PLANE_NORMAL: " + str(self.PLANE_NORMAL) + " (normalized)")
+        rospy.loginfo("BYPASS_PLANE_TRANSLATION_M: " + str(self.PLANE_TRANSLATION_M))
+        rospy.loginfo("BYPASS_PLANE_ROTATION_DEG: " + str(self.PLANE_ROTATION_DEG))
 
         rospy.loginfo("\n\nPost processing parameters:")
         rospy.loginfo("REDUCTION_FILTER: " + str(self.REDUCTION_FILTER))
@@ -145,7 +159,6 @@ class ToFPreProcess:
         rospy.loginfo("DETECT_LINES_MIN_POINTS: " + str(self.DETECT_LINES_MIN_POINTS))
 
         # Normalize plane normal to unit vector, otherwise functions in receive_pointcloud() have to be changed
-        self.PLANE_NORMAL = self.PLANE_NORMAL / np.linalg.norm(self.PLANE_NORMAL)
         self.tof_sub = rospy.Subscriber(self.INPUT_TOPIC_PC2, PointCloud2, self.receive_pointcloud)
         self.laser_sub = rospy.Subscriber(self.INPUT_TOPIC_LASERSCAN, LaserScan, self.receive_laserscan)
         
@@ -158,8 +171,69 @@ class ToFPreProcess:
         self.tof_post_process_pub = rospy.Publisher(self.OUTPUT_TOPIC_POST_SLICE, LaserScan, queue_size=10)
         self.tof_combined_pub = rospy.Publisher(self.OUTPUT_TOPIC_COMBINED, LaserScan, queue_size=10)
 
+        # member variables
+        self.laser_offset_deg = 0.0
+        self.laser_incremenet_deg = 0.0
+        self.lidar_point_count = 0
+        self.tof_point_count = 0
+        self.got_first_laserscan = False
+        self.got_first_tof_scan = False
+        self.last_tof_scan = LaserScan()
+        self.tof_slice_plane = Transform()
+
+        # Calculate the 2D slice plane either from the LaserScan frame or from the manually specified BYPASS values
         if(self.BYPASS_MERGING):
-            self.laser_incremenet_deg = self.LASER_ANGLE_DEG
+            # Convert axis-angle to quaternion
+            q = quaternion_from_euler(self.PLANE_ROTATION_DEG[0], self.PLANE_ROTATION_DEG[1], self.PLANE_ROTATION_DEG[2])
+
+            self.tof_slice_plane.translation.x  = self.PLANE_TRANSLATION_M[0]
+            self.tof_slice_plane.translation.y  = self.PLANE_TRANSLATION_M[1]
+            self.tof_slice_plane.translation.z  = self.PLANE_TRANSLATION_M[2]
+            self.tof_slice_plane.rotation.x     = q[0]
+            self.tof_slice_plane.rotation.y     = q[1]
+            self.tof_slice_plane.rotation.z     = q[2]
+            self.tof_slice_plane.rotation.w     = q[3]
+
+            self.laser_incremenet_deg           = self.LASER_ANGLE_DEG
+            self.tof_point_count                = int(round(360 / self.laser_incremenet_deg))
+
+        else:
+            self.tf_buffer = Buffer()
+            self.tf_listener = TransformListener(self.tf_buffer)
+            
+            rospy.loginfo("\n\nWait for transformation")
+            try:
+                transform = self.tf_buffer.lookup_transform(self.INPUT_FRAME_PC2, self.INPUT_FRAME_LASERSCAN, rospy.Time(0), timeout=rospy.Duration(5.0))
+                self.tof_slice_plane = transform.transform
+                rospy.loginfo("\n\nGot transformation")
+            except:
+               rospy.logerr("\n\nCould not find transformation")
+               exit()
+
+            # convert Z-Offset in the laser frame to a translation in the parent frame
+            q = self.tof_slice_plane.rotation
+            rotation_matrix = tf_conversions.transformations.quaternion_matrix([q.x, q.y, q.z, q.w])
+            offset_vector = np.array([0, 0, self.LASER_FRAME_Z_OFFSET, 1]) # homogeneous coordinates
+            transformed_offset = np.dot(rotation_matrix, offset_vector)[:3] # discard homogeneous coordinate -> x, y, z
+
+            # apply offset
+            self.tof_slice_plane.translation.x += transformed_offset[0]
+            self.tof_slice_plane.translation.y += transformed_offset[1]
+            self.tof_slice_plane.translation.z += transformed_offset[2]
+
+        # calculate 2D slice plane normal vector for following computations
+        q = self.tof_slice_plane.rotation
+        rotation_matrix = tf_conversions.transformations.quaternion_matrix([q.x, q.y, q.z, q.w])
+        self.tof_normal_vector = rotation_matrix[:3, 2] # Extract the third column (z-axis)
+
+        # Publish 2D slice plane tf
+        tf_msg = TransformStamped()
+        tf_msg.header.stamp = rospy.Time.now()
+        tf_msg.header.frame_id = self.INPUT_FRAME_PC2
+        tf_msg.child_frame_id = self.OUTPUT_FRAME_COMBINED
+        tf_msg.transform = self.tof_slice_plane
+        self.static_broadcaster = rospy.Publisher('/tf_static', TFMessage, queue_size=10, latch=True)
+        self.static_broadcaster.publish(TFMessage([tf_msg]))
 
         rospy.loginfo("\n\nWait for first LaserScan")
 
@@ -171,7 +245,7 @@ class ToFPreProcess:
                 self.laser_incremenet_deg   = msg.angle_increment * 180 / math.pi
                 self.lidar_point_count      = int(math.floor(abs((msg.angle_max - msg.angle_min) / msg.angle_increment)))
                 self.tof_point_count        = int(math.floor(360/self.laser_incremenet_deg))
-                
+               
                 # rospy.loginfo("self.laser_msg_min_angle: "    + str(msg.angle_min * 180 / math.pi))
                 # rospy.loginfo("self.laser_msg_max_angle: "    + str(msg.angle_max * 180 / math.pi))
                 # rospy.loginfo("self.laser_msg_increment: "    + str(msg.angle_increment * 180 / math.pi))
@@ -222,6 +296,12 @@ class ToFPreProcess:
 
     def receive_pointcloud(self, msg):
 
+        # prepare new header
+        laser_header = Header()
+        laser_header.frame_id = self.OUTPUT_FRAME_COMBINED
+        laser_header.stamp = msg.header.stamp #rospy.Time.now()
+        laser_header.seq = msg.header.seq
+
         # Restore shape of flattened array
         msg_bytes = np.frombuffer(msg.data, dtype=np.float32)
         point_cloud = np.reshape(msg_bytes, (msg.width, 4))
@@ -245,7 +325,7 @@ class ToFPreProcess:
         filtered_points = point_cloud[filtered_idx, :]
 
         # Publist first intermediate result
-        if(self.PUBLISH_INTERMEDIATE_TOPICS):    
+        if(self.PUBLISH_INTERMEDIATE_TOPICS):
             scan_msg_filter = self.prepare_PointCloud2_msg(filtered_points, msg.header, "sigma")
             self.tof_pre_process_pub.publish(scan_msg_filter)
 
@@ -254,8 +334,8 @@ class ToFPreProcess:
         ##########################################################################################
 
         # Calculate the directional(!) distances of all points to the plane (Ref. Papula p.62, sec. 4.3.4)
-        #distances = np.dot((points_2d[:,0:3]-self.PLANE_POINT), self.PLANE_NORMAL)/np.linalg.norm(self.PLANE_NORMAL)
-        distances = np.dot((filtered_points[:,0:3]-self.PLANE_POINT), self.PLANE_NORMAL)
+        #distances = np.dot((points_2d[:,0:3]-self.PLANE_TRANSLATION_M), self.tof_normal_vector)/np.linalg.norm(self.tof_normal_vector)
+        distances = np.dot((filtered_points[:,0:3]-self.PLANE_TRANSLATION_M), self.tof_normal_vector)
 
         # Filter points by their distance from the specified plane
         filtered_idx = np.abs(distances) < self.DISTANCE_THRESHOLD
@@ -264,8 +344,8 @@ class ToFPreProcess:
 
         # Project points on the 2d plane using dyadic product of distances and plane normal
         if self.PROJECT_ON_PLANE:
-            #points_2d[:,0:3] = points_2d[:,0:3] - np.outer(distances, self.PLANE_NORMAL/np.linalg.norm(self.PLANE_NORMAL))
-            point_cloud_2d[:,0:3] = point_cloud_2d[:,0:3] - np.outer(filtered_distances, self.PLANE_NORMAL)
+            #points_2d[:,0:3] = points_2d[:,0:3] - np.outer(distances, self.tof_normal_vector/np.linalg.norm(self.tof_normal_vector))
+            point_cloud_2d[:,0:3] = point_cloud_2d[:,0:3] - np.outer(filtered_distances, self.tof_normal_vector)
 
         # Publist second intermediate result
         if(self.PUBLISH_INTERMEDIATE_TOPICS):
@@ -364,7 +444,8 @@ class ToFPreProcess:
                     elif d2_dist < (self.INTERPOLATE_MAX_DISTANCE_M / 6): 
                         interpolated_distances[i] = p2_dist
 
-                interpolated_distances_msg = self.prepare_LaserScan_msg(interpolated_distances, intensities, self.laser_offset_deg, 360 + self.laser_offset_deg, self.laser_incremenet_deg, 0.05, 5.0, msg.header)
+                #laser_header.stamp = rospy.Time.now()
+                interpolated_distances_msg = self.prepare_LaserScan_msg(interpolated_distances, intensities, self.laser_offset_deg, 360 + self.laser_offset_deg, self.laser_incremenet_deg, 0.05, 5.0, laser_header)
                 
                 if(not self.DETECT_LINES):
                     self.last_tof_scan = interpolated_distances_msg
@@ -559,7 +640,8 @@ class ToFPreProcess:
                                 ranges[angle_idx] = distance
                                 intensities[angle_idx] = i + 1
 
-                    sampled_line_msg = self.prepare_LaserScan_msg(ranges, intensities, self.laser_offset_deg, 360 + self.laser_offset_deg, self.laser_incremenet_deg, 0.05, 5.0, msg.header)
+                    #laser_header.stamp = rospy.Time.now()
+                    sampled_line_msg = self.prepare_LaserScan_msg(ranges, intensities, self.laser_offset_deg, 360 + self.laser_offset_deg, self.laser_incremenet_deg, 0.05, 5.0, laser_header)
                     self.last_tof_scan = sampled_line_msg
                     self.got_first_tof_scan = True
                     point_count = ranges.size
