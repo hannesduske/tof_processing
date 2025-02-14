@@ -61,7 +61,7 @@ DEFAULT_DETECT_LINES_MIN_POINTS = 4
 
 
 
-class ToFPreProcess:
+class ToFProcessor:
     def __init__(self):
 
         rospy.init_node('tof_pre_process_node', anonymous=True)
@@ -157,10 +157,6 @@ class ToFPreProcess:
         rospy.loginfo("DETECT_LINES_EPSILON: " + str(self.DETECT_LINES_EPSILON))
         rospy.loginfo("DETECT_LINES_MAX_DISTANCE_M: " + str(self.DETECT_LINES_MAX_DISTANCE_M))
         rospy.loginfo("DETECT_LINES_MIN_POINTS: " + str(self.DETECT_LINES_MIN_POINTS))
-
-        # Normalize plane normal to unit vector, otherwise functions in receive_pointcloud() have to be changed
-        self.tof_sub = rospy.Subscriber(self.INPUT_TOPIC_PC2, PointCloud2, self.receive_pointcloud)
-        self.laser_sub = rospy.Subscriber(self.INPUT_TOPIC_LASERSCAN, LaserScan, self.receive_laserscan)
         
         if self.PUBLISH_INTERMEDIATE_TOPICS:
             self.tof_pre_process_pub = rospy.Publisher(self.OUTPUT_TOPIC_PRE_SLICE, PointCloud2, queue_size=10)
@@ -223,8 +219,10 @@ class ToFPreProcess:
 
         # calculate 2D slice plane normal vector for following computations
         q = self.tof_slice_plane.rotation
-        rotation_matrix = tf_conversions.transformations.quaternion_matrix([q.x, q.y, q.z, q.w])
-        self.tof_normal_vector = rotation_matrix[:3, 2] # Extract the third column (z-axis)
+        self.tof_rotation_matrix = np.array(tf_conversions.transformations.quaternion_matrix([q.x, q.y, q.z, q.w]), dtype=np.float32)
+        self.tof_translation_vector = np.array([self.tof_slice_plane.translation.x, self.tof_slice_plane.translation.y, self.tof_slice_plane.translation.z, 0], dtype=np.float32)
+        self.tof_normal_vector = self.tof_rotation_matrix[:3, 2] # Extract the third column (z-axis)
+        #self.tof_transformation = np.matrix([rotation_matrix, np.transpose(translation_vector), np.zeros_like([3,2])], np.zeros[])
 
         # Publish 2D slice plane tf
         tf_msg = TransformStamped()
@@ -236,6 +234,8 @@ class ToFPreProcess:
         self.static_broadcaster.publish(TFMessage([tf_msg]))
 
         rospy.loginfo("\n\nWait for first LaserScan")
+        self.tof_sub = rospy.Subscriber(self.INPUT_TOPIC_PC2, PointCloud2, self.receive_pointcloud)
+        self.laser_sub = rospy.Subscriber(self.INPUT_TOPIC_LASERSCAN, LaserScan, self.receive_laserscan)
 
     def receive_laserscan(self, msg):
         if(not self.got_first_laserscan):
@@ -297,15 +297,14 @@ class ToFPreProcess:
     def receive_pointcloud(self, msg):
 
         # prepare new header
-        laser_header = Header()
-        laser_header.frame_id = self.OUTPUT_FRAME_COMBINED
-        laser_header.stamp = msg.header.stamp #rospy.Time.now()
-        laser_header.seq = msg.header.seq
+        out_header = Header()
+        out_header.frame_id = self.OUTPUT_FRAME_COMBINED
+        out_header.stamp = msg.header.stamp #rospy.Time.now()
+        out_header.seq = msg.header.seq
 
         # Restore shape of flattened array
         msg_bytes = np.frombuffer(msg.data, dtype=np.float32)
         point_cloud = np.reshape(msg_bytes, (msg.width, 4))
-
         filtered_idx = np.any(point_cloud)
 
         ##########################################################################################
@@ -333,23 +332,22 @@ class ToFPreProcess:
         # Take a 2D slice from the points
         ##########################################################################################
 
-        # Calculate the directional(!) distances of all points to the plane (Ref. Papula p.62, sec. 4.3.4)
-        #distances = np.dot((points_2d[:,0:3]-self.PLANE_TRANSLATION_M), self.tof_normal_vector)/np.linalg.norm(self.tof_normal_vector)
-        distances = np.dot((filtered_points[:,0:3]-self.PLANE_TRANSLATION_M), self.tof_normal_vector)
+        # Apply coordinate transformation to move the points in the new self.OUTPUT_TOPIC_COMBINED frame
+        filtered_points -= self.tof_translation_vector
+        filtered_points = np.transpose(np.dot(self.tof_rotation_matrix, np.transpose(filtered_points)))
 
-        # Filter points by their distance from the specified plane
-        filtered_idx = np.abs(distances) < self.DISTANCE_THRESHOLD
-        point_cloud_2d = filtered_points[filtered_idx]
-        filtered_distances = distances[filtered_idx]
+        # Filter points by their distance from the 2D slice plane
+        # This is trivial at this point as all points are transformed in the new coordinate frame and their z-coordinate is the distance from the plane
+        filtered_idx = np.abs(filtered_points[:,2]) < self.DISTANCE_THRESHOLD
+        point_cloud_2d = filtered_points[filtered_idx, :]
 
-        # Project points on the 2d plane using dyadic product of distances and plane normal
+        # Project points on the 2d plane by setting their z-distance to zero
         if self.PROJECT_ON_PLANE:
-            #points_2d[:,0:3] = points_2d[:,0:3] - np.outer(distances, self.tof_normal_vector/np.linalg.norm(self.tof_normal_vector))
-            point_cloud_2d[:,0:3] = point_cloud_2d[:,0:3] - np.outer(filtered_distances, self.tof_normal_vector)
+            point_cloud_2d[:,2] = np.zeros_like(point_cloud_2d[:,2])
 
         # Publist second intermediate result
         if(self.PUBLISH_INTERMEDIATE_TOPICS):
-            scan_msg_filter = self.prepare_PointCloud2_msg(point_cloud_2d, msg.header, "sigma")
+            scan_msg_filter = self.prepare_PointCloud2_msg(point_cloud_2d, out_header, "sigma")
             self.tof_2d_slice_pub.publish(scan_msg_filter)
 
         ##########################################################################################
@@ -390,7 +388,7 @@ class ToFPreProcess:
                 point_count = np.size(point_cloud_2d, axis=0)
 
                 if self.PUBLISH_INTERMEDIATE_TOPICS:
-                    post_msg = self.prepare_PointCloud2_msg(point_cloud_2d, msg.header, "sigma")
+                    post_msg = self.prepare_PointCloud2_msg(point_cloud_2d, out_header, "sigma")
                     self.tof_2d_reduction_pub.publish(post_msg)
 
 
@@ -445,7 +443,7 @@ class ToFPreProcess:
                         interpolated_distances[i] = p2_dist
 
                 #laser_header.stamp = rospy.Time.now()
-                interpolated_distances_msg = self.prepare_LaserScan_msg(interpolated_distances, intensities, self.laser_offset_deg, 360 + self.laser_offset_deg, self.laser_incremenet_deg, 0.05, 5.0, laser_header)
+                interpolated_distances_msg = self.prepare_LaserScan_msg(interpolated_distances, intensities, self.laser_offset_deg, 360 + self.laser_offset_deg, self.laser_incremenet_deg, 0.05, 5.0, out_header)
                 
                 if(not self.DETECT_LINES):
                     self.last_tof_scan = interpolated_distances_msg
@@ -557,7 +555,7 @@ class ToFPreProcess:
                         prev_point = current_point
 
                 if(self.PUBLISH_INTERMEDIATE_TOPICS):
-                    line_msg = self.prepare_PointCloud2_msg(point_cloud_lines, msg.header, "line_no")
+                    line_msg = self.prepare_PointCloud2_msg(point_cloud_lines, out_header, "line_no")
                     self.tof_line_pub.publish(line_msg)
 
                 # Linear regression to fit lines to points via PCA
@@ -641,7 +639,7 @@ class ToFPreProcess:
                                 intensities[angle_idx] = i + 1
 
                     #laser_header.stamp = rospy.Time.now()
-                    sampled_line_msg = self.prepare_LaserScan_msg(ranges, intensities, self.laser_offset_deg, 360 + self.laser_offset_deg, self.laser_incremenet_deg, 0.05, 5.0, laser_header)
+                    sampled_line_msg = self.prepare_LaserScan_msg(ranges, intensities, self.laser_offset_deg, 360 + self.laser_offset_deg, self.laser_incremenet_deg, 0.05, 5.0, out_header)
                     self.last_tof_scan = sampled_line_msg
                     self.got_first_tof_scan = True
                     point_count = ranges.size
@@ -698,7 +696,7 @@ class ToFPreProcess:
         pass
 
 def main():
-    node = ToFPreProcess()
+    node = ToFProcessor()
     rospy.spin()
 
 if __name__ == '__main__':
