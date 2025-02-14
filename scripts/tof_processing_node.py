@@ -29,9 +29,13 @@ DEFAULT_HIGH_SIGMA_THRESHOLD = 6e-03
 
 # Default values for 2D slice
 DEFAULT_PROJECT_ON_PLANE = False
-DEFAULT_DISTANCE_THRESHOLD = 0.05 # m
-DEFAULT_PLANE_POINT = [0.0,0.0,0.10] # 5cm above base_link
-DEFAULT_PLANE_NORMAL = [0.0,0.0,1.0] # x-y-Plane
+DEFAULT_DISTANCE_THRESHOLD_M = 0.05 # m
+DEFAULT_INTERPOLATE_MAX_DISTANCE_M = 0.05
+
+DEFAULT_LASER_FRAME_Z_OFFSET = 0.0
+DEFAULT_BYPASS_LASER_ANGLE_DEG = 1.0
+DEFAULT_BYPASS_PLANE_POINT = [0.0,0.0,0.10] # 10cm above base_link
+DEFAULT_BYPASS_PLANE_NORMAL = [0.0,0.0,1.0] # x-y-Plane
 
 # Default values for post processing
 DEFAULT_REDUCTION_FILTER = True
@@ -43,8 +47,8 @@ DEFAULT_DETECT_LINES_EPSILON = 0.1
 DEFAULT_DETECT_LINES_MAX_DISTANCE_M = 0.3
 DEFAULT_DETECT_LINES_MIN_POINTS = 4
 
-DEFAULT_INTERPOLATE_MAX_DISTANCE_M = 0.05
-DEFAULT_NTERPOLATE_LASER_ANGLE_DEG = 1.0
+
+
 
 class ToFPreProcess:
     def __init__(self):
@@ -80,26 +84,30 @@ class ToFPreProcess:
         self.HIGH_SIGMA_THRESHOLD           = rospy.get_param('~HIGH_SIGMA_THRESHOLD', DEFAULT_HIGH_SIGMA_THRESHOLD)
 
         self.PROJECT_ON_PLANE               = rospy.get_param('~PROJECT_ON_PLANE', DEFAULT_PROJECT_ON_PLANE)
-        self.DISTANCE_THRESHOLD             = rospy.get_param('~DISTANCE_THRESHOLD', DEFAULT_DISTANCE_THRESHOLD)
-        self.PLANE_POINT                    = np.array(rospy.get_param('~PLANE_POINT', DEFAULT_PLANE_POINT), dtype=float)
-        self.PLANE_NORMAL                   = np.array(rospy.get_param('~PLANE_NORMAL', DEFAULT_PLANE_NORMAL), dtype=float)
+        self.DISTANCE_THRESHOLD             = rospy.get_param('~DISTANCE_THRESHOLD', DEFAULT_DISTANCE_THRESHOLD_M)
+        self.INTERPOLATE_MAX_DISTANCE_M     = rospy.get_param('~INTERPOLATE_MAX_DISTANCE_M', DEFAULT_INTERPOLATE_MAX_DISTANCE_M)
+
+        self.LASER_FRAME_Z_OFFSET           = rospy.get_param('~LASER_FRAME_Z_OFFSET', DEFAULT_LASER_FRAME_Z_OFFSET)
+        self.LASER_ANGLE_DEG                = rospy.get_param('~LASER_ANGLE_DEG', DEFAULT_BYPASS_LASER_ANGLE_DEG)
+        self.PLANE_POINT                    = np.array(rospy.get_param('~BYPASS_PLANE_POINT', DEFAULT_BYPASS_PLANE_POINT), dtype=float)
+        self.PLANE_NORMAL                   = np.array(rospy.get_param('~BYPASS_PLANE_NORMAL', DEFAULT_BYPASS_PLANE_NORMAL), dtype=float)
 
         self.REDUCTION_FILTER               = rospy.get_param('~REDUCTION_FILTER', DEFAULT_REDUCTION_FILTER)
         self.REDUCTION_FILTER_TRESHOLD_M    = rospy.get_param('~REDUCTION_FILTER_TRESHOLD_M', DEFAULT_REDUCTION_FILTER_TRESHOLD_M)
+
         self.DETECT_LINES                   = rospy.get_param('~DETECT_LINES', DEFAULT_DETECT_LINES)
         self.DETECT_LINES_REGRESSION        = rospy.get_param('~DETECT_LINES_REGRESSION', DEFAULT_DETECT_LINES_REGRESSION)
         self.DETECT_LINES_EPSILON           = rospy.get_param('~DETECT_LINES_EPSILON', DEFAULT_DETECT_LINES_EPSILON)
         self.DETECT_LINES_MAX_DISTANCE_M    = rospy.get_param('~DETECT_LINES_MAX_DISTANCE_M', DEFAULT_DETECT_LINES_MAX_DISTANCE_M)
         self.DETECT_LINES_MIN_POINTS        = rospy.get_param('~DETECT_LINES_MIN_POINTS', DEFAULT_DETECT_LINES_MIN_POINTS)
-        self.INTERPOLATE_MAX_DISTANCE_M     = rospy.get_param('~INTERPOLATE_MAX_DISTANCE_M', DEFAULT_INTERPOLATE_MAX_DISTANCE_M)
-        self.INTERPOLATE_LASER_ANGLE_DEG    = rospy.get_param('~INTERPOLATE_LASER_ANGLE_DEG', DEFAULT_NTERPOLATE_LASER_ANGLE_DEG)
+        
 
         rospy.loginfo("\n\nGeneral parameters:")
-        rospy.loginfo("PUBLISH_INTERMEDIATE_TOPICS: " + str(self.PUBLISH_INTERMEDIATE_TOPICS))
         rospy.loginfo("BYPASS_MERGING: " + str(self.BYPASS_MERGING))
         rospy.loginfo("MAX_MERGE_TIME_DIFFERENCE_MS: " + str(self.MAX_MERGE_TIME_DIFFERENCE_MS))
 
         rospy.loginfo("\n\nTopics:")
+        rospy.loginfo("PUBLISH_INTERMEDIATE_TOPICS: " + str(self.PUBLISH_INTERMEDIATE_TOPICS))
         rospy.loginfo("INPUT_TOPIC_PC2: " + str(self.INPUT_TOPIC_PC2))
         rospy.loginfo("INPUT_TOPIC_LASERSCAN: " + str(self.INPUT_TOPIC_LASERSCAN))
         if self.PUBLISH_INTERMEDIATE_TOPICS:
@@ -120,8 +128,12 @@ class ToFPreProcess:
         rospy.loginfo("\n\n2D slice parameters:")
         rospy.loginfo("PROJECT_ON_PLANE : " + str(self.PROJECT_ON_PLANE))
         rospy.loginfo("DISTANCE_THRESHOLD: " + str(self.DISTANCE_THRESHOLD))
-        rospy.loginfo("PLANE_POINT: " + str(self.PLANE_POINT))
-        rospy.loginfo("PLANE_NORMAL: " + str(self.PLANE_NORMAL) + " (normalized)")
+        rospy.loginfo("INTERPOLATE_MAX_DISTANCE_M: " + str(self.INTERPOLATE_MAX_DISTANCE_M))
+
+        rospy.loginfo("LASER_FRAME_Z_OFFSET: " + str(self.LASER_FRAME_Z_OFFSET))
+        rospy.loginfo("BYPASS_LASER_ANGLE_DEG: " + str(self.LASER_ANGLE_DEG))
+        rospy.loginfo("BYPASS_PLANE_POINT: " + str(self.PLANE_POINT))
+        rospy.loginfo("BYPASS_PLANE_NORMAL: " + str(self.PLANE_NORMAL) + " (normalized)")
 
         rospy.loginfo("\n\nPost processing parameters:")
         rospy.loginfo("REDUCTION_FILTER: " + str(self.REDUCTION_FILTER))
@@ -131,8 +143,6 @@ class ToFPreProcess:
         rospy.loginfo("DETECT_LINES_EPSILON: " + str(self.DETECT_LINES_EPSILON))
         rospy.loginfo("DETECT_LINES_MAX_DISTANCE_M: " + str(self.DETECT_LINES_MAX_DISTANCE_M))
         rospy.loginfo("DETECT_LINES_MIN_POINTS: " + str(self.DETECT_LINES_MIN_POINTS))
-        rospy.loginfo("INTERPOLATE_MAX_DISTANCE_M: " + str(self.INTERPOLATE_MAX_DISTANCE_M))
-        rospy.loginfo("INTERPOLATE_LASER_ANGLE_DEG: " + str(self.INTERPOLATE_LASER_ANGLE_DEG))
 
         # Normalize plane normal to unit vector, otherwise functions in receive_pointcloud() have to be changed
         self.PLANE_NORMAL = self.PLANE_NORMAL / np.linalg.norm(self.PLANE_NORMAL)
@@ -149,7 +159,7 @@ class ToFPreProcess:
         self.tof_combined_pub = rospy.Publisher(self.OUTPUT_TOPIC_COMBINED, LaserScan, queue_size=10)
 
         if(self.BYPASS_MERGING):
-            self.laser_incremenet_deg = self.INTERPOLATE_LASER_ANGLE_DEG
+            self.laser_incremenet_deg = self.LASER_ANGLE_DEG
 
         rospy.loginfo("\n\nWait for first LaserScan")
 
@@ -162,14 +172,14 @@ class ToFPreProcess:
                 self.lidar_point_count      = int(math.floor(abs((msg.angle_max - msg.angle_min) / msg.angle_increment)))
                 self.tof_point_count        = int(math.floor(360/self.laser_incremenet_deg))
                 
-                rospy.loginfo("self.laser_msg_min_angle: "    + str(msg.angle_min * 180 / math.pi))
-                rospy.loginfo("self.laser_msg_max_angle: "    + str(msg.angle_max * 180 / math.pi))
-                rospy.loginfo("self.laser_msg_increment: "    + str(msg.angle_increment * 180 / math.pi))
-                rospy.loginfo("self.laser_msg_count: "        + str((msg.angle_min - msg.angle_max) / msg.angle_increment))
-                rospy.loginfo("")
-                rospy.loginfo("self.laser_offset_deg: "       + str(self.laser_offset_deg))
-                rospy.loginfo("self.laser_increment: "        + str(self.laser_incremenet_deg))
-                rospy.loginfo("self.lidar_point_count: "      + str(self.lidar_point_count))
+                # rospy.loginfo("self.laser_msg_min_angle: "    + str(msg.angle_min * 180 / math.pi))
+                # rospy.loginfo("self.laser_msg_max_angle: "    + str(msg.angle_max * 180 / math.pi))
+                # rospy.loginfo("self.laser_msg_increment: "    + str(msg.angle_increment * 180 / math.pi))
+                # rospy.loginfo("self.laser_msg_count: "        + str((msg.angle_min - msg.angle_max) / msg.angle_increment))
+                # rospy.loginfo("")
+                # rospy.loginfo("self.laser_offset_deg: "       + str(self.laser_offset_deg))
+                # rospy.loginfo("self.laser_increment: "        + str(self.laser_incremenet_deg))
+                # rospy.loginfo("self.lidar_point_count: "      + str(self.lidar_point_count))
 
             self.got_first_laserscan = True
             rospy.loginfo("\n\nGot first LaserScan. Starting to merge the scans now.")
