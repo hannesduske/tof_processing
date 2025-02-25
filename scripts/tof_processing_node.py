@@ -92,7 +92,7 @@ class ToFProcessor:
         self.HIGH_SIGMA_THRESHOLD           = rospy.get_param('~HIGH_SIGMA_THRESHOLD', DEFAULT_HIGH_SIGMA_THRESHOLD)
 
         self.PROJECT_ON_PLANE               = rospy.get_param('~PROJECT_ON_PLANE', DEFAULT_PROJECT_ON_PLANE)
-        self.DISTANCE_THRESHOLD             = rospy.get_param('~DISTANCE_THRESHOLD', DEFAULT_DISTANCE_THRESHOLD_M)
+        self.DISTANCE_THRESHOLD             = rospy.get_param('~DISTANCE_THRESHOLD_M', DEFAULT_DISTANCE_THRESHOLD_M)
         self.INTERPOLATE_MAX_DISTANCE_M     = rospy.get_param('~INTERPOLATE_MAX_DISTANCE_M', DEFAULT_INTERPOLATE_MAX_DISTANCE_M)
 
         self.LASER_FRAME_Z_OFFSET           = rospy.get_param('~LASER_FRAME_Z_OFFSET', DEFAULT_LASER_FRAME_Z_OFFSET)
@@ -243,7 +243,7 @@ class ToFProcessor:
             if(not self.BYPASS_MERGING):
                 self.laser_offset_deg       = msg.angle_min * 180 / math.pi #math.fmod(msg.angle_min, msg.angle_increment) * 180 / math.pi
                 self.laser_incremenet_deg   = msg.angle_increment * 180 / math.pi
-                self.lidar_point_count      = int(math.floor(abs((msg.angle_max - msg.angle_min) / msg.angle_increment)))
+                self.lidar_point_count      = int(math.floor(abs((msg.angle_max - msg.angle_min) / msg.angle_increment))) -1
                 self.tof_point_count        = int(math.floor(360/self.laser_incremenet_deg))
                
                 # rospy.loginfo("self.laser_msg_min_angle: "    + str(msg.angle_min * 180 / math.pi))
